@@ -38,4 +38,4 @@ terraform.rc
 terraform.tfstate.backup
 .terraform.lock.hcl
 
-jenkins-team2-key.pem
+jenkins-key.pem

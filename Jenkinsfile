@@ -1,5 +1,6 @@
 pipeline {
   agent any
+
   tools {
     terraform 'terraform'
   }
@@ -12,19 +13,14 @@ pipeline {
     stage('Checkov') {
       steps {
         script {
-          // sh 'pip install pipenv'
-          // sh 'pip install checkov'
-          sh 'python -m venv venv'
-          sh 'source venv/bin/activate'
-          sh 'pip install -U pip'
-          sh 'pip install checkov'
-          def checkovStatus = sh(script: "checkov -d . -o cli -o junitxml --output-file-path console,results.xml --quiet --compact", returnStatus: true)
+          sh '''
+            python3 -m venv venv
+            . venv/bin/activate
+            pip install -U pip
+            pip install checkov
+            checkov -d . -o cli -o junitxml --output-file-path console,results.xml --quiet --compact
+          '''
           junit skipPublishingChecks: true, testResults: 'results.xml'
-          echo "Checkov command exited with status ${checkovStatus}"
-          // Optional: fail build if issues found
-          // if (checkovStatus != 0) {
-          //   error "Checkov found vulnerabilities or errors."
-          // }
         }
       }
     }
