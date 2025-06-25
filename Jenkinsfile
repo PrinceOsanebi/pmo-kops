@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   tools {
-    terraform 'terraform' // Ensure this matches name under "Manage Jenkins" > "Global Tool Configuration"
+    terraform 'terraform'
   }
 
   parameters {
@@ -10,7 +10,7 @@ pipeline {
   }
 
   triggers {
-    cron('* * * * *') // Run every minute
+    cron('* * * * *')
   }
 
   environment {
@@ -22,73 +22,93 @@ pipeline {
   }
 
   options {
-    ansiColor('xterm')
     timestamps()
   }
 
   stages {
     stage('Prepare Python Environment') {
       steps {
-        sh '''
-          python3 -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install checkov==${CHECKOV_VERSION}
-        '''
+        script {
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            sh '''
+              python3 -m venv venv
+              . venv/bin/activate
+              pip install --upgrade pip
+              pip install checkov==${CHECKOV_VERSION}
+            '''
+          }
+        }
       }
     }
 
     stage('Checkov Scan (IaC Security)') {
       steps {
         script {
-          def checkovCmd = """
-            . venv/bin/activate
-            checkov -d . \\
-              -o cli \\
-              -o junitxml \\
-              --output-file-path ${env.CHECKOV_REPORT},${env.CHECKOV_XML} \\
-              --quiet --compact
-          """
-          def checkovStatus = sh(script: checkovCmd, returnStatus: true)
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            def checkovCmd = """
+              . venv/bin/activate
+              checkov -d . \\
+                -o cli \\
+                -o junitxml \\
+                --output-file-path ${env.CHECKOV_REPORT},${env.CHECKOV_XML} \\
+                --quiet --compact
+            """
+            def checkovStatus = sh(script: checkovCmd, returnStatus: true)
 
-          echo "Checkov exited with status: ${checkovStatus}"
-          junit skipPublishingChecks: true, testResults: "${env.CHECKOV_XML}"
-
-          // Optional failure on issues
-          // if (checkovStatus != 0) {
-          //   error "Checkov reported issues."
-          // }
+            echo "Checkov exited with status: ${checkovStatus}"
+            junit skipPublishingChecks: true, testResults: "${env.CHECKOV_XML}"
+          }
         }
       }
     }
 
     stage('Terraform Init') {
       steps {
-        sh 'terraform init'
+        script {
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            sh 'terraform init'
+          }
+        }
       }
     }
 
     stage('Terraform Format') {
       steps {
-        sh 'terraform fmt --recursive'
+        script {
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            sh 'terraform fmt --recursive'
+          }
+        }
       }
     }
 
     stage('Terraform Validate') {
       steps {
-        sh 'terraform validate'
+        script {
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            sh 'terraform validate'
+          }
+        }
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        sh 'terraform plan'
+        script {
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            sh 'terraform plan'
+          }
+        }
       }
     }
 
     stage('Terraform Action') {
       steps {
-        sh "terraform ${params.action} -auto-approve"
+        script {
+          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
+            sh "terraform ${params.action} -auto-approve"
+          }
+        }
       }
     }
 
