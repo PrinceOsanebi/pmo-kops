@@ -14,128 +14,103 @@ pipeline {
   }
 
   environment {
-    CHECKOV_VERSION = '3.2.438'
-    CHECKOV_REPORT = 'checkov_report.txt'
+    CHECKOV_REPORT = 'checkov_console_output.txt'
     CHECKOV_XML = 'checkov_results.xml'
-    SLACK_CHANNEL = 'Prince, OSANEBI Maluabuchukwu'
-    SLACK_CREDENTIAL_ID = 'ctXYtFKc4wtCtzXTmddolWhL'
+    HTML_REPORT_DIR = 'checkov_html_report'
   }
 
   options {
     timestamps()
+    ansiColor('xterm')
   }
 
   stages {
-    stage('Prepare Python Environment') {
+    stage('Checkov IaC Security Scan') {
       steps {
         script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            sh '''
-              python3 -m venv venv
-              . venv/bin/activate
-              pip install --upgrade pip
-              pip install checkov==${CHECKOV_VERSION}
-            '''
-          }
+          sh '''
+            rm -rf venv ${HTML_REPORT_DIR}
+            python3 -m venv venv
+            . venv/bin/activate
+            pip install --upgrade pip
+            pip install --quiet checkov
+
+            checkov -d . -o cli -o junitxml \
+              --output-file-path ${CHECKOV_REPORT},${CHECKOV_XML} \
+              --quiet --compact || true
+
+            # Create HTML report with a basic bar-style summary
+            mkdir -p ${HTML_REPORT_DIR}
+            echo "<html><head><title>Checkov Report</title></head><body>" > ${HTML_REPORT_DIR}/index.html
+            echo "<h2>Checkov Summary</h2>" >> ${HTML_REPORT_DIR}/index.html
+            echo "<pre>" >> ${HTML_REPORT_DIR}/index.html
+            cat ${CHECKOV_REPORT} >> ${HTML_REPORT_DIR}/index.html
+            echo "</pre>" >> ${HTML_REPORT_DIR}/index.html
+            echo "</body></html>" >> ${HTML_REPORT_DIR}/index.html
+          '''
+
+          junit skipPublishingChecks: true, testResults: "${env.CHECKOV_XML}"
+          archiveArtifacts artifacts: "${env.CHECKOV_REPORT},${env.CHECKOV_XML}", allowEmptyArchive: true
         }
       }
     }
 
-    stage('Checkov Scan (IaC Security)') {
+    stage('Publish HTML Report') {
       steps {
-        script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            def checkovCmd = """
-              . venv/bin/activate
-              checkov -d . \\
-                -o cli \\
-                -o junitxml \\
-                --output-file-path ${env.CHECKOV_REPORT},${env.CHECKOV_XML} \\
-                --quiet --compact
-            """
-            def checkovStatus = sh(script: checkovCmd, returnStatus: true)
-
-            echo "Checkov exited with status: ${checkovStatus}"
-            junit skipPublishingChecks: true, testResults: "${env.CHECKOV_XML}"
-          }
-        }
+        publishHTML([
+          reportDir: "${env.HTML_REPORT_DIR}",
+          reportFiles: 'index.html',
+          reportName: 'Checkov IaC Security Report',
+          allowMissing: false,
+          alwaysLinkToLastBuild: true,
+          keepAll: true
+        ])
       }
     }
 
     stage('Terraform Init') {
       steps {
-        script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            sh 'terraform init'
-          }
-        }
+        sh 'terraform init'
       }
     }
 
     stage('Terraform Format') {
       steps {
-        script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            sh 'terraform fmt --recursive'
-          }
-        }
+        sh 'terraform fmt --recursive'
       }
     }
 
     stage('Terraform Validate') {
       steps {
-        script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            sh 'terraform validate'
-          }
-        }
+        sh 'terraform validate'
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            sh 'terraform plan'
-          }
-        }
+        sh 'terraform plan'
       }
     }
 
     stage('Terraform Action') {
       steps {
-        script {
-          wrap([$class: 'AnsiColorBuildWrapper', colorMapName: 'xterm']) {
-            sh "terraform ${params.action} -auto-approve"
-          }
-        }
-      }
-    }
-
-    stage('Archive Reports') {
-      steps {
-        archiveArtifacts artifacts: "${env.CHECKOV_REPORT},${env.CHECKOV_XML}", allowEmptyArchive: true
+        sh "terraform ${params.action} -auto-approve"
       }
     }
   }
 
   post {
     success {
-      slackSend(
-        channel: "${env.SLACK_CHANNEL}",
-        color: 'good',
-        message: "*SUCCESS*: Jenkins job `${env.JOB_NAME}` #${env.BUILD_NUMBER} completed successfully. <${env.BUILD_URL}|View Job>"
-      )
+      echo "✅ Build succeeded."
     }
     failure {
-      slackSend(
-        channel: "${env.SLACK_CHANNEL}",
-        color: 'danger',
-        message: "*FAILURE*: Jenkins job `${env.JOB_NAME}` #${env.BUILD_NUMBER} failed. <${env.BUILD_URL}|View Job>"
-      )
+      echo "❌ Build failed."
+    }
+    unstable {
+      echo "⚠️ Build marked unstable."
     }
     always {
-      echo "Build completed. Artifacts archived, notifications sent."
+      echo "📦 Pipeline complete. Reports archived and HTML published."
     }
   }
 }
