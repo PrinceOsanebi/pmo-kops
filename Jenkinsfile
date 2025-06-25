@@ -12,15 +12,20 @@ pipeline {
     stage('Checkov') {
       steps {
         script {
+          // sh 'pip install pipenv'
+          // sh 'pip install checkov'
           sh 'python -m venv venv'
-          sh 'source venv/bin/activate && pip install -U pip'
-          sh 'source venv/bin/activate && pip install --ignore-installed checkov'
-          def checkovStatus = sh(script: '''
-            source venv/bin/activate
-            checkov -d . -o cli -o junitxml --output-file-path checkov_output.txt,checkov_results.xml --quiet --compact
-          ''', returnStatus: true)
-          junit skipPublishingChecks: true, testResults: 'checkov_results.xml'
+          sh 'source venv/bin/activate'
+          sh 'pip install -U pip'
+          // sh 'pip install --ignore-installed checkov==3.2.438'
+          sh 'pip install --ignore-installed checkov'
+          def checkovStatus = sh(script: "checkov -d . -o cli -o junitxml --output-file-path checkov_output.txt,console,results.xml --quiet --compact", returnStatus: true)
+          junit skipPublishingChecks: true, testResults: 'results.xml'
           echo "Checkov command exited with status ${checkovStatus}"
+          // Optional: fail build if issues found
+          // if (checkovStatus != 0) {
+          //   error "Checkov found vulnerabilities or errors."
+          // }
         }
       }
     }
