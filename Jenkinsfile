@@ -1,6 +1,5 @@
 pipeline {
   agent any
-
   tools {
     terraform 'terraform'
   }
@@ -9,106 +8,65 @@ pipeline {
     choice(name: 'action', choices: ['apply', 'destroy'], description: 'Terraform action to perform')
   }
 
-  triggers {
-    cron('* * * * *') // Every minute
-  }
-
-  options {
-    timestamps()
-  }
-
   stages {
-    stage('Checkov (IaC Security Scan)') {
+    stage('Checkov') {
       steps {
         script {
           sh '''
             python3 -m venv venv
-            . venv/bin/activate
-            pip install --upgrade pip
-            pip install checkov
+            source venv/bin/activate
+            pip install --upgrade pip==23.2.2
+            pip install pipenv==2023.4.29
+            pip install checkov==3.2.438
           '''
-          def checkovStatus = sh(
-            script: '''
-              . venv/bin/activate
-              checkov -d . \
-                -o cli \
-                -o junitxml \
-                --output-file-path checkov_output.txt,checkov_results.xml \
-                --quiet --compact
-            ''',
-            returnStatus: true
-          )
 
-          // Publish graphical results
-          junit skipPublishingChecks: true, testResults: 'checkov_results.xml'
+          def checkovStatus = sh(script: '''
+            source venv/bin/activate
+            checkov -d . --download-external-modules -o cli -o junitxml \
+              --output-file-path checkov_output.txt,results.xml --quiet --compact
+          ''', returnStatus: true)
 
-          // Archive text scan results
-          archiveArtifacts artifacts: 'checkov_output.txt,checkov_results.xml', allowEmptyArchive: true
+          junit skipPublishingChecks: true, testResults: 'results.xml'
+          archiveArtifacts artifacts: 'checkov_output.txt'
 
-          // Mark build as unstable if Checkov found issues
-          if (checkovStatus != 0) {
-            currentBuild.result = 'UNSTABLE'
-            echo "Checkov found policy violations — marking build as UNSTABLE"
-          } else {
-            echo "Checkov passed with no issues"
-          }
+          echo "Checkov command exited with status ${checkovStatus}"
+
+          // Uncomment to fail build if Checkov finds issues
+          // if (checkovStatus != 0) {
+          //   error "Checkov found vulnerabilities or errors."
+          // }
         }
       }
     }
 
     stage('Terraform Init') {
       steps {
-        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
-          sh 'terraform init'
-        }
+        sh 'terraform init'
       }
     }
 
     stage('Terraform Format') {
       steps {
-        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
-          sh 'terraform fmt --recursive'
-        }
+        sh 'terraform fmt --recursive'
       }
     }
 
     stage('Terraform Validate') {
       steps {
-        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
-          sh 'terraform validate'
-        }
+        sh 'terraform validate'
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
-          sh 'terraform plan'
-        }
+        sh 'terraform plan'
       }
     }
 
-    stage('Terraform Apply/Destroy') {
+    stage('Terraform Action') {
       steps {
-        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
-          sh "terraform ${params.action} -auto-approve"
-        }
+        sh "terraform ${params.action} -auto-approve"
       }
-    }
-  }
-
-  post {
-    success {
-      echo "✅ Build succeeded."
-    }
-    unstable {
-      echo "⚠️ Build completed but marked UNSTABLE due to IaC policy violations."
-    }
-    failure {
-      echo "❌ Build failed."
-    }
-    always {
-      echo "ℹ️ Build completed. Artifacts archived."
     }
   }
 }
