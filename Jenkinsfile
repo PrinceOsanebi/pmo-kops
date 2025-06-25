@@ -10,91 +10,89 @@ pipeline {
   }
 
   triggers {
-    cron('* * * * *')
-  }
-
-  environment {
-    CHECKOV_REPORT = 'checkov_console_output.txt'
-    CHECKOV_XML = 'checkov_results.xml'
-    HTML_REPORT_DIR = 'checkov_html_report'
+    cron('* * * * *') // Every minute
   }
 
   options {
     timestamps()
-    ansiColor('xterm')
   }
 
   stages {
-    stage('Checkov IaC Security Scan') {
+    stage('Checkov (IaC Security Scan)') {
       steps {
         script {
           sh '''
-            rm -rf venv ${HTML_REPORT_DIR}
             python3 -m venv venv
             . venv/bin/activate
             pip install --upgrade pip
-            pip install --quiet checkov
-
-            checkov -d . -o cli -o junitxml \
-              --output-file-path ${CHECKOV_REPORT},${CHECKOV_XML} \
-              --quiet --compact || true
-
-            # Create HTML report with a basic bar-style summary
-            mkdir -p ${HTML_REPORT_DIR}
-            echo "<html><head><title>Checkov Report</title></head><body>" > ${HTML_REPORT_DIR}/index.html
-            echo "<h2>Checkov Summary</h2>" >> ${HTML_REPORT_DIR}/index.html
-            echo "<pre>" >> ${HTML_REPORT_DIR}/index.html
-            cat ${CHECKOV_REPORT} >> ${HTML_REPORT_DIR}/index.html
-            echo "</pre>" >> ${HTML_REPORT_DIR}/index.html
-            echo "</body></html>" >> ${HTML_REPORT_DIR}/index.html
+            pip install checkov
           '''
+          def checkovStatus = sh(
+            script: '''
+              . venv/bin/activate
+              checkov -d . \
+                -o cli \
+                -o junitxml \
+                --output-file-path checkov_output.txt,checkov_results.xml \
+                --quiet --compact
+            ''',
+            returnStatus: true
+          )
 
-          junit skipPublishingChecks: true, testResults: "${env.CHECKOV_XML}"
-          archiveArtifacts artifacts: "${env.CHECKOV_REPORT},${env.CHECKOV_XML}", allowEmptyArchive: true
+          // Publish graphical results
+          junit skipPublishingChecks: true, testResults: 'checkov_results.xml'
+
+          // Archive text scan results
+          archiveArtifacts artifacts: 'checkov_output.txt,checkov_results.xml', allowEmptyArchive: true
+
+          // Mark build as unstable if Checkov found issues
+          if (checkovStatus != 0) {
+            currentBuild.result = 'UNSTABLE'
+            echo "Checkov found policy violations — marking build as UNSTABLE"
+          } else {
+            echo "Checkov passed with no issues"
+          }
         }
-      }
-    }
-
-    stage('Publish HTML Report') {
-      steps {
-        publishHTML([
-          reportDir: "${env.HTML_REPORT_DIR}",
-          reportFiles: 'index.html',
-          reportName: 'Checkov IaC Security Report',
-          allowMissing: false,
-          alwaysLinkToLastBuild: true,
-          keepAll: true
-        ])
       }
     }
 
     stage('Terraform Init') {
       steps {
-        sh 'terraform init'
+        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
+          sh 'terraform init'
+        }
       }
     }
 
     stage('Terraform Format') {
       steps {
-        sh 'terraform fmt --recursive'
+        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
+          sh 'terraform fmt --recursive'
+        }
       }
     }
 
     stage('Terraform Validate') {
       steps {
-        sh 'terraform validate'
+        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
+          sh 'terraform validate'
+        }
       }
     }
 
     stage('Terraform Plan') {
       steps {
-        sh 'terraform plan'
+        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
+          sh 'terraform plan'
+        }
       }
     }
 
-    stage('Terraform Action') {
+    stage('Terraform Apply/Destroy') {
       steps {
-        sh "terraform ${params.action} -auto-approve"
+        wrap([$class: 'AnsiColorBuildWrapper', 'colorMapName': 'xterm']) {
+          sh "terraform ${params.action} -auto-approve"
+        }
       }
     }
   }
@@ -103,14 +101,14 @@ pipeline {
     success {
       echo "✅ Build succeeded."
     }
+    unstable {
+      echo "⚠️ Build completed but marked UNSTABLE due to IaC policy violations."
+    }
     failure {
       echo "❌ Build failed."
     }
-    unstable {
-      echo "⚠️ Build marked unstable."
-    }
     always {
-      echo "📦 Pipeline complete. Reports archived and HTML published."
+      echo "ℹ️ Build completed. Artifacts archived."
     }
   }
 }
