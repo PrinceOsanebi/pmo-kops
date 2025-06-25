@@ -147,7 +147,7 @@ resource "aws_instance" "jenkins-server" {
     RELEASE_VERSION = ""
   })
 
-  # Require IMDSv2 tokens for metadata service security
+    # Require IMDSv2 tokens for metadata service security
   metadata_options {
     http_tokens = "required"
   }

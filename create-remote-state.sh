@@ -2,7 +2,7 @@
 
 # set variable for bucket-name
 BUCKET_NAME="ecommerce-remote-state"
-AWS_REGION="eu-west-2"
+AWS_REGION="eu-west-1"
 AWS_PROFILE="pmo-admin"
 
 # create bucket

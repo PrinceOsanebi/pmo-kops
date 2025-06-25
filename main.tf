@@ -155,7 +155,7 @@ resource "aws_iam_role_policy_attachment" "sqs_access" {
 }
 
 # vpc permission
-resource "aws_iam_role_policy_attachment" "sqs_access" {
+resource "aws_iam_role_policy_attachment" "vpc_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonVPCFullAccess"
 }
