@@ -1,22 +1,24 @@
-# Use existing hosted zone
+# Local variables for reusability
+locals {
+  name = "kops"
+  }
+
+# Fetch existing Route53 zone
 data "aws_route53_zone" "zone" {
   name         = "pmolabs.space"
   private_zone = false
 }
-# Create a DNS A record pointing to the KOps server's IP
+
+# Create Route53 A record for kOps server
 resource "aws_route53_record" "kops_dns" {
   zone_id = data.aws_route53_zone.zone.zone_id
   name    = "kops.pmolabs.space"
   type    = "A"
   ttl     = 300
   records = [aws_instance.kops.public_ip]
-
 }
 
-locals {
-  name = "kops"
-}
-
+# VPC configuration with one public subnet
 module "vpc" {
   source = "terraform-aws-modules/vpc/aws"
 
@@ -30,44 +32,48 @@ module "vpc" {
   enable_vpn_gateway = false
 
   tags = {
-    Name = local.name
+    Name = "${local.name}-vpc"
   }
 }
 
-# Creating security group for kOps server
+# Security group for kOps EC2 instance
 resource "aws_security_group" "kops-sg" {
   name        = "${local.name}-sg"
-  description = "Allow inbound traffic from vpc and all outbound traffic"
+  description = "Security group for kOps EC2 instance (SSM only, no SSH)"
   vpc_id      = module.vpc.vpc_id
 
   # Egress rule: Allow all outbound traffic
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"          # All protocols
-    cidr_blocks = ["0.0.0.0/0"] # Allow outbound to anywhere
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = {
+  tags =  {
     Name = "${local.name}-sg"
   }
 }
 
-# use latest ubuntu image
+# Get the latest Ubuntu 22.04 AMI
 data "aws_ami" "ubuntu" {
   most_recent = true
+
   filter {
     name   = "name"
     values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
   }
+
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
   }
+
   owners = ["099720109477"] # Canonical
 }
 
-# create ubuntu server 
+# Create EC2 instance for kOps server
 resource "aws_instance" "kops" {
   ami                         = data.aws_ami.ubuntu.id
   instance_type               = "t2.medium"
@@ -82,8 +88,7 @@ resource "aws_instance" "kops" {
   }
 }
 
-#SSM policy 
-# create an IAM instance role
+# IAM Role for EC2 instance
 resource "aws_iam_role" "kops-role" {
   name = "${local.name}-role"
 
@@ -106,55 +111,56 @@ resource "aws_iam_role" "kops-role" {
   }
 }
 
-# kops IAM profile
+# IAM Instance Profile for EC2
 resource "aws_iam_instance_profile" "kops_profile" {
   name = "${local.name}-profile"
   role = aws_iam_role.kops-role.name
 }
 
-# SSM permission
+# IAM policy attachments
+# Enable SSM access
 resource "aws_iam_role_policy_attachment" "ssm_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# ec2 permission
+# Full access to EC2
 resource "aws_iam_role_policy_attachment" "ec2_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
 }
 
-# iam permission
+# Full access to IAM
 resource "aws_iam_role_policy_attachment" "iam_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/IAMFullAccess"
 }
 
-# S3 permission
+# Full access to S3
 resource "aws_iam_role_policy_attachment" "s3_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
 }
 
-# route53 permission
+# Full access to Route53
 resource "aws_iam_role_policy_attachment" "route53_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonRoute53FullAccess"
 }
 
-# eventbridge permission
-resource "aws_iam_role_policy_attachment" "evenbridge_access" {
+# Full access to EventBridge
+resource "aws_iam_role_policy_attachment" "eventbridge_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEventBridgeFullAccess"
 }
 
-# Sqs permission
+# Full access to SQS
 resource "aws_iam_role_policy_attachment" "sqs_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSQSFullAccess"
 }
 
-# vpc permission
+# Full access to VPC
 resource "aws_iam_role_policy_attachment" "vpc_access" {
   role       = aws_iam_role.kops-role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonVPCFullAccess"
