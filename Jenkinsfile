@@ -9,23 +9,30 @@ pipeline {
   }
 
   stages {
-    stage('Checkov') {
+    stage('Checkov - IAC Scan') {
       steps {
         script {
-          // sh 'pip install pipenv'
-          // sh 'pip install checkov'
-          sh 'python -m venv venv'
-          sh 'source venv/bin/activate'
-          sh 'pip install -U pip'
-          // sh 'pip install --ignore-installed checkov==3.2.438'
-          sh 'pip install --ignore-installed checkov'
-          def checkovStatus = sh(script: "checkov -d . -o cli -o junitxml --output-file-path console,results.xml --quiet --compact", returnStatus: true)
+          // Setup Python environment and install Checkov
+          sh 'python3 -m venv venv'
+          sh '. venv/bin/activate && pip install -U pip && pip install --ignore-installed checkov'
+
+          // Run Checkov scan with CLI and JUnitXML outputs
+          def checkovStatus = sh(
+            script: ". venv/bin/activate && checkov -d . -o cli -o junitxml --output-file-path console,results.xml --quiet --compact",
+            returnStatus: true
+          )
+
+          // Text output of the scan
+          echo "=== Checkov CLI Output ==="
+          sh 'cat console'
+
+          // Publish test results graphically (JUnit plugin in Jenkins)
           junit skipPublishingChecks: true, testResults: 'results.xml'
-          echo "Checkov command exited with status ${checkovStatus}"
-          // Optional: fail build if issues found
-          // if (checkovStatus != 0) {
-          //   error "Checkov found vulnerabilities or errors."
-          // }
+
+          // Archive console output so it's downloadable
+          archiveArtifacts artifacts: 'console', onlyIfSuccessful: false
+
+          echo "Checkov exited with status ${checkovStatus}"
         }
       }
     }
@@ -61,8 +68,3 @@ pipeline {
     }
   }
 }
-
-
-
-
-
